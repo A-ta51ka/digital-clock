@@ -1,0 +1,1658 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>デジタル時計＆スケジュール管理</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', 'Noto Sans JP', 'Hiragino Sans', 'Meiryo', 'sans-serif']
+          }
+        }
+      }
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    .tabular-nums, .clean-zero {
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: "zero" 0;
+    }
+    .clock-time-landscape { font-size: clamp(2.75rem, min(8.2vw, 15vh), 11rem); }
+    .clock-date-fluid { font-size: clamp(0.875rem, min(1.5vw, 2.6vh), 2rem); }
+    .clock-reiwa-fluid { font-size: clamp(0.75rem, min(1.1vw, 2vh), 1.45rem); }
+    .countdown-time-fluid { font-size: clamp(1.5rem, min(3.4vw, 5.5vh), 4.5rem); }
+    .countdown-label-fluid { font-size: clamp(0.75rem, min(1.15vw, 2vh), 1.4rem); }
+    .memo-box-fluid { height: clamp(16.75rem, 42vh, 21.5rem); }
+    #app-viewport-scaler {
+      width: 100%;
+      height: 100%;
+      transform-origin: top left;
+    }
+    .toggle-track {
+      position: relative;
+      width: 2.35rem;
+      height: 1.3rem;
+      border-radius: 9999px;
+      background-color: #d6cfc2;
+      transition: background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+      flex-shrink: 0;
+    }
+    .dark .toggle-track { background-color: #334155; }
+    .toggle-track[data-checked="true"] { background-color: #059669; }
+    .toggle-thumb {
+      position: absolute;
+      top: 0.15rem;
+      left: 0.15rem;
+      width: 1rem;
+      height: 1rem;
+      border-radius: 9999px;
+      background-color: #fff;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .toggle-track[data-checked="true"] .toggle-thumb { transform: translateX(1.05rem); }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.35); border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.65); }
+  </style>
+</head>
+<body class="bg-[#FAF6EE] dark:bg-slate-950 text-stone-800 dark:text-slate-100 font-sans w-screen h-dvh overflow-hidden flex flex-col transition-colors duration-200 selection:bg-emerald-500 selection:text-white">
+
+  <div id="app-viewport-scaler">
+    <!-- メインコンテンツグリッド -->
+    <main id="main-grid" class="w-full h-full px-3 sm:px-5 lg:px-7 py-3 sm:py-4 lg:py-5 flex-1 min-h-0 overflow-hidden grid grid-cols-12 gap-3 sm:gap-5 items-stretch">
+
+      <!-- 左側カラム：現在時刻＆メモカード -->
+      <div id="left-column" class="col-span-6 h-full min-h-0 flex flex-col">
+        <section id="clock-card" class="relative overflow-hidden bg-[#FFFDF9] dark:bg-slate-900 rounded-3xl shadow-sm border border-[#E8DFCE] dark:border-slate-800 p-4 sm:p-6 flex-1 min-h-0 flex flex-col">
+          <!-- 令和表記・日付・デジタル時計 -->
+          <div id="clock-display-wrapper" class="flex-1 min-h-0 flex flex-col items-center justify-center text-center py-1">
+            <div class="flex flex-col items-center">
+              <div id="reiwa-display" class="clock-reiwa-fluid font-bold text-stone-500 dark:text-slate-400 tracking-wider mb-0.5">令和8年</div>
+              <div id="date-display" class="clock-date-fluid font-bold text-stone-500 dark:text-slate-400 tracking-wide mb-1.5">2026年11月21日 (土)</div>
+            </div>
+            <div id="clock-time" class="font-sans font-black clock-time-landscape tracking-tight tabular-nums clean-zero text-stone-900 dark:text-white leading-none">00:00:00</div>
+          </div>
+
+          <div class="space-y-2.5 shrink-0">
+            <!-- 直近メモ5件表示エリア（高さ固定） -->
+            <div id="recent-memos-container" class="memo-box-fluid overflow-y-auto pr-0.5 flex flex-col">
+              <div id="recent-memos-list" class="mt-auto space-y-1.5"></div>
+            </div>
+
+            <!-- 下部操作バー -->
+            <div class="flex items-center justify-between gap-2 pt-0.5">
+              <button id="btn-settings" type="button" title="設定" aria-label="設定" class="p-2 rounded-xl border border-[#E5DCCB] dark:border-slate-700 bg-[#FFFDF9] dark:bg-slate-900 text-stone-600 dark:text-slate-300 hover:bg-[#F4EDE0] dark:hover:bg-slate-800 shadow-xs transition-colors">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+              </button>
+
+              <div class="flex items-center justify-end gap-2">
+                <button id="btn-open-memo-modal" type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-500 shadow-xs transition-colors">
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 20h9"></path>
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                  </svg>
+                  <span id="memo-btn-label">現在時刻をメモ</span>
+                </button>
+
+                <button id="btn-open-memo-list" type="button" class="inline-flex items-center justify-center gap-1.5 w-28 px-3 py-1.5 rounded-xl text-xs font-semibold border border-[#E5DCCB] dark:border-slate-700 bg-[#FFFDF9] dark:bg-slate-900 text-stone-700 dark:text-slate-200 hover:bg-[#F4EDE0] dark:hover:bg-slate-800 transition-colors shrink-0">
+                  <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="8" y1="6" x2="21" y2="6"></line>
+                    <line x1="8" y1="12" x2="21" y2="12"></line>
+                    <line x1="8" y1="18" x2="21" y2="18"></line>
+                    <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                    <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                    <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                  </svg>
+                  <span id="memo-list-btn-label" class="tabular-nums">一覧 (0)</span>
+                </button>
+
+                <!-- 予定非表示時の説明ボタン移動先 -->
+                <div id="clock-help-slot" class="hidden relative shrink-0"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- 右側カラム：カウントダウン＆今日の予定カード -->
+      <div id="right-column" class="col-span-6 h-full min-h-0 flex flex-col gap-3 sm:gap-5">
+        <section id="event-countdown-box" class="bg-[#FFFDF9] dark:bg-slate-900 rounded-3xl shadow-sm border border-[#E8DFCE] dark:border-slate-800 px-5 py-3.5 sm:px-6 sm:py-4 shrink-0">
+          <div class="min-w-0 text-center">
+            <div id="countdown-status-label" class="countdown-label-fluid font-bold text-emerald-600 dark:text-emerald-400 truncate">次の予定まで</div>
+            <div id="countdown-timer-display" class="font-sans font-black countdown-time-fluid text-stone-900 dark:text-white tabular-nums clean-zero mt-0.5 leading-tight">--:--:--</div>
+          </div>
+        </section>
+
+        <section id="events-card" class="bg-[#FFFDF9] dark:bg-slate-900 rounded-3xl shadow-sm border border-[#E8DFCE] dark:border-slate-800 p-4 sm:p-5 flex-1 min-h-0 flex flex-col">
+          <div class="flex-1 flex flex-col min-h-0">
+            <!-- ヘッダー操作バー -->
+            <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-[#EFE7D8] dark:border-slate-800 shrink-0">
+              <div class="flex items-center gap-1.5 min-w-0">
+                <button id="btn-toggle-past-pos" type="button" class="px-2.5 py-1 rounded-xl text-[11px] font-semibold border border-[#E5DCCB] dark:border-slate-700 bg-[#F7F1E6] dark:bg-slate-800 text-stone-600 dark:text-slate-300 hover:bg-[#EFE6D6] dark:hover:bg-slate-700 transition-colors">
+                  <span id="past-pos-label">終了スケジュール: そのまま</span>
+                </button>
+                <button id="btn-toggle-allday-pos" type="button" class="px-2.5 py-1 rounded-xl text-[11px] font-semibold border border-[#E5DCCB] dark:border-slate-700 bg-[#F7F1E6] dark:bg-slate-800 text-stone-600 dark:text-slate-300 hover:bg-[#EFE6D6] dark:hover:bg-slate-700 transition-colors">
+                  <span id="allday-pos-label">終日: 上部</span>
+                </button>
+              </div>
+
+              <div class="flex items-center gap-1.5">
+                <button id="btn-reset-countdown" type="button" title="自動カウントダウンに戻す" aria-label="自動カウントダウンに戻す" class="inline-flex items-center justify-center p-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500 shadow-xs transition-colors">
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                    <path d="M3 3v5h5"></path>
+                  </svg>
+                </button>
+
+                <button id="btn-connect-gas" type="button" title="Googleカレンダー連携設定" aria-label="Googleカレンダー連携設定" class="inline-flex items-center justify-center p-2 rounded-xl border border-[#E5DCCB] dark:border-slate-700 bg-[#F7F1E6] dark:bg-slate-800 text-stone-600 dark:text-slate-300 hover:bg-[#EFE6D6] dark:hover:bg-slate-700 transition-colors">
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                  </svg>
+                </button>
+
+                <a href="https://calendar.google.com/" target="_blank" rel="noopener noreferrer" title="Googleカレンダーを開く" aria-label="Googleカレンダーを開く" class="inline-flex items-center justify-center p-2 rounded-xl border border-[#E5DCCB] dark:border-slate-700 bg-[#F7F1E6] dark:bg-slate-800 text-blue-600 dark:text-blue-400 hover:bg-[#EFE6D6] dark:hover:bg-slate-700 transition-colors">
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                  </svg>
+                </a>
+              </div>
+            </div>
+
+            <!-- 予定リスト -->
+            <div id="events-list" class="flex-1 space-y-2 overflow-y-auto pr-1"></div>
+
+            <!-- 予定カード下部：同期ステータス＆操作説明ボタン -->
+            <div class="flex items-center justify-between gap-2 pt-2 mt-1 shrink-0">
+              <div class="min-w-0">
+                <span id="sync-badge" class="hidden inline-block truncate px-2.5 py-1 rounded-xl text-[11px] font-semibold bg-[#F4EDE0] dark:bg-slate-800 text-stone-500 dark:text-slate-400"></span>
+              </div>
+              <div id="events-help-slot" class="relative shrink-0">
+                <div id="help-anchor" class="relative">
+                  <button id="btn-help" type="button" title="操作説明" aria-label="操作説明" class="w-7 h-7 inline-flex items-center justify-center rounded-full text-xs font-extrabold border border-[#E5DCCB] dark:border-slate-700 bg-[#F7F1E6] dark:bg-slate-800 text-stone-600 dark:text-slate-300 hover:bg-[#EFE6D6] dark:hover:bg-slate-700 shadow-xs transition-colors">？</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- 機能設定モーダル（操作説明と同じ画面中央に表示） -->
+  <div id="settings-popover" data-modal-backdrop class="hidden fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4">
+    <div id="settings-popover-card" class="w-full max-w-md max-h-[calc(100dvh-2rem)] rounded-2xl bg-[#FFFDF9] dark:bg-slate-900 border border-[#E5DCCB] dark:border-slate-700 shadow-2xl p-4 sm:p-5 text-xs flex flex-col gap-2.5 overflow-y-auto">
+      <div>
+        <div class="flex items-center justify-between mb-2 pb-1.5 border-b border-[#EFE7D8] dark:border-slate-800">
+          <div id="settings-popover-title" class="font-bold text-sm text-stone-800 dark:text-slate-100">表示・機能設定</div>
+          <button type="button" data-close-modal="settings-popover" aria-label="閉じる" class="p-1 rounded-lg text-stone-400 hover:bg-[#F4EDE0] dark:hover:bg-slate-800 transition-colors">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <!-- トグルスイッチ一覧 -->
+        <div class="divide-y divide-[#EFE7D8] dark:divide-slate-800/80">
+          <!-- 時刻メモ表示 -->
+          <button id="btn-toggle-recent-memos" type="button" role="switch" aria-checked="true" class="w-full py-2 flex items-center justify-between gap-3 text-left hover:opacity-85 transition-opacity">
+            <span id="toggle-recent-memos-label" class="font-semibold text-stone-700 dark:text-slate-200">時刻メモ表示</span>
+            <span id="toggle-recent-memos-track" class="toggle-track" data-checked="true"><span class="toggle-thumb"></span></span>
+          </button>
+
+          <!-- 予定リスト表示 -->
+          <button id="btn-toggle-schedule" type="button" role="switch" aria-checked="true" class="w-full py-2 flex items-center justify-between gap-3 text-left hover:opacity-85 transition-opacity">
+            <span id="toggle-schedule-label" class="font-semibold text-stone-700 dark:text-slate-200">予定リスト表示</span>
+            <span id="toggle-schedule-track" class="toggle-track" data-checked="true"><span class="toggle-thumb"></span></span>
+          </button>
+
+          <!-- カウントダウン表示 -->
+          <button id="btn-toggle-countdown" type="button" role="switch" aria-checked="true" class="w-full py-2 flex items-center justify-between gap-3 text-left transition-opacity disabled:opacity-45 disabled:cursor-not-allowed">
+            <span id="toggle-countdown-label" class="font-semibold text-stone-700 dark:text-slate-200">カウントダウン表示</span>
+            <span id="toggle-countdown-track" class="toggle-track" data-checked="true"><span class="toggle-thumb"></span></span>
+          </button>
+
+          <!-- 画面の常時点灯 -->
+          <button id="btn-wakelock" type="button" role="switch" aria-checked="false" class="w-full py-2 flex items-center justify-between gap-3 text-left hover:opacity-85 transition-opacity">
+            <span id="wakelock-label" class="font-semibold text-stone-700 dark:text-slate-200">画面の常時点灯</span>
+            <span id="wakelock-track" class="toggle-track" data-checked="false"><span class="toggle-thumb"></span></span>
+          </button>
+
+          <!-- 全画面表示 -->
+          <button id="btn-fullscreen" type="button" role="switch" aria-checked="false" class="w-full py-2 flex items-center justify-between gap-3 text-left hover:opacity-85 transition-opacity">
+            <span id="fullscreen-label" class="font-semibold text-stone-700 dark:text-slate-200">全画面表示</span>
+            <span id="fullscreen-track" class="toggle-track" data-checked="false"><span class="toggle-thumb"></span></span>
+          </button>
+
+          <!-- スタイル（ライト / ダーク） -->
+          <div class="py-2 flex items-center justify-between gap-3">
+            <span id="theme-row-label" class="font-semibold text-stone-700 dark:text-slate-200">スタイル</span>
+            <button id="btn-theme" type="button" class="px-3 py-1 rounded-xl text-xs font-bold border border-[#E5DCCB] dark:border-slate-700 bg-[#FAF5EB] dark:bg-slate-800 text-stone-700 dark:text-slate-200 hover:bg-[#EFE6D6] dark:hover:bg-slate-700 transition-colors">
+              <span id="theme-label">ライト</span>
+            </button>
+          </div>
+
+          <!-- 表示言語 -->
+          <div class="py-2 flex items-center justify-between gap-3">
+            <span id="lang-row-label" class="font-semibold text-stone-700 dark:text-slate-200">表示言語</span>
+            <button id="btn-lang" type="button" class="px-3 py-1 rounded-xl text-xs font-bold border border-[#E5DCCB] dark:border-slate-700 bg-[#FAF5EB] dark:bg-slate-800 text-stone-700 dark:text-slate-200 hover:bg-[#EFE6D6] dark:hover:bg-slate-700 transition-colors">
+              <span id="lang-label">English</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 予定事前通知セクション -->
+      <div class="pt-2 border-t border-[#EFE7D8] dark:border-slate-800 space-y-2">
+        <div class="flex items-center justify-between gap-2">
+          <span id="notify-row-label" class="font-semibold text-stone-700 dark:text-slate-200">予定の事前通知</span>
+          <button id="btn-notify" type="button" class="h-7 whitespace-nowrap inline-flex items-center justify-center gap-1.5 px-2.5 rounded-xl text-xs font-semibold transition-colors bg-emerald-600 text-white shadow-xs hover:bg-emerald-500">
+            <svg id="notify-icon-bell" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+            <svg id="notify-icon-silent" class="w-3.5 h-3.5 shrink-0 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+              <path d="M18.63 13A17.89 17.89 0 0 1 18 8"></path>
+              <path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"></path>
+              <path d="M18 8a6 6 0 0 0-9.33-5"></path>
+              <line x1="2" y1="2" x2="22" y2="22"></line>
+            </svg>
+            <span id="notify-label">音あり通知</span>
+          </button>
+        </div>
+
+        <div class="flex items-center justify-between">
+          <span id="notify-minutes-label" class="font-semibold text-stone-600 dark:text-slate-300">事前通知時間</span>
+          <span id="notify-minutes-display" class="font-sans font-bold text-emerald-600 dark:text-emerald-400 tabular-nums clean-zero">5分前</span>
+        </div>
+        <div>
+          <input id="notify-minutes-slider" type="range" min="1" max="60" value="5" class="w-full accent-emerald-600 cursor-pointer block" />
+          <div class="flex items-center justify-between text-[10px] font-semibold text-stone-400 dark:text-slate-500 tabular-nums clean-zero mt-0.5 px-0.5">
+            <span>1</span><span>30</span><span>60</span>
+          </div>
+        </div>
+        <button id="btn-test-notify" type="button" class="w-full h-8 px-3 rounded-xl inline-flex items-center justify-center gap-1.5 font-semibold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors shadow-xs disabled:bg-stone-300/80 dark:disabled:bg-slate-800/90 disabled:text-stone-400/90 dark:disabled:text-slate-600 disabled:border disabled:border-stone-300 dark:disabled:border-slate-700/70 disabled:opacity-65 disabled:cursor-not-allowed disabled:shadow-none">
+          <svg id="test-notify-disabled-icon" class="w-3.5 h-3.5 shrink-0 hidden text-rose-500/80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
+          </svg>
+          <span id="test-notify-label">通知テスト</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 操作説明モーダル（画面中央に表示） -->
+  <div id="help-popover" data-modal-backdrop class="hidden fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4">
+    <div id="help-popover-card" class="w-full max-w-md max-h-[calc(100dvh-2rem)] rounded-2xl bg-[#FFFDF9] dark:bg-slate-900 border border-[#E5DCCB] dark:border-slate-700 shadow-2xl p-4 sm:p-5 text-xs flex flex-col gap-2.5 overflow-y-auto">
+      <div class="flex items-center justify-between pb-2 border-b border-[#EFE7D8] dark:border-slate-800 shrink-0">
+        <div id="help-popover-title" class="font-bold text-sm text-stone-800 dark:text-slate-100">操作説明</div>
+        <button type="button" data-close-modal="help-popover" aria-label="閉じる" class="p-1 rounded-lg text-stone-400 hover:bg-[#F4EDE0] dark:hover:bg-slate-800 transition-colors">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <ul id="help-list" class="space-y-2.5 text-stone-600 dark:text-slate-300 list-disc pl-4 leading-relaxed"></ul>
+    </div>
+  </div>
+
+  <!-- Googleカレンダー（GAS）連携モーダル -->
+  <div id="gas-modal" data-modal-backdrop class="hidden fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-[#FFFDF9] dark:bg-slate-900 border border-[#E8DFCE] dark:border-slate-800 rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl max-h-[90dvh] flex flex-col">
+      <div class="flex items-center justify-between mb-3 shrink-0">
+        <h3 id="gas-modal-title" class="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Googleカレンダー連携 (GAS)</h3>
+        <button type="button" data-close-modal="gas-modal" class="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="flex gap-1.5 p-1 mb-3 rounded-2xl bg-[#F4EDE0] dark:bg-slate-800/90 border border-[#E5DCCB] dark:border-slate-700 shrink-0">
+        <button id="btn-gas-tab-guide" type="button" class="flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-colors bg-[#FFFDF9] dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 shadow-xs">連携方法の説明</button>
+        <button id="btn-gas-tab-url" type="button" class="flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-colors text-stone-600 dark:text-slate-300 hover:text-stone-900 dark:hover:text-white">URL入力・同期設定</button>
+      </div>
+
+      <div id="gas-tab-panel-guide" class="flex-1 overflow-y-auto pr-1 space-y-3 text-xs text-stone-600 dark:text-slate-300 leading-relaxed">
+        <p id="gas-guide-intro" class="font-medium text-stone-700 dark:text-slate-200">Google Apps Script（無料）を使って、ご自身のGoogleカレンダーの予定を安全に読み込む手順です。</p>
+        <ol class="space-y-2.5 list-decimal pl-4">
+          <li>
+            <span class="font-bold text-stone-800 dark:text-slate-100">Google Apps Script を開く</span><br />
+            <a href="https://script.google.com/" target="_blank" rel="noopener noreferrer" class="text-emerald-600 dark:text-emerald-400 underline font-semibold">script.google.com</a> にアクセスし、「新しいプロジェクト」をクリックします。
+          </li>
+          <li>
+            <span class="font-bold text-stone-800 dark:text-slate-100">下のコードを貼り付けて保存</span><br />
+            エディタ内の元のコードを消去し、下記のコードを貼り付けて保存（Ctrl+S / ⌘+S）します。
+          </li>
+          <li>
+            <span class="font-bold text-stone-800 dark:text-slate-100">ウェブアプリとしてデプロイ</span><br />
+            右上の「デプロイ」＞「新しいデプロイ」を選択し、種類の歯車アイコンから「ウェブアプリ」を選びます。<br />
+            ・アクセスできるユーザー：<strong>「全員」</strong> に設定して「デプロイ」を押します。<br />
+            <div class="mt-1.5 p-2.5 rounded-xl bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/70 text-[11px] text-amber-900 dark:text-amber-200 space-y-1">
+              <div class="font-bold">※「Google はこのアプリを検証していません」と表示された場合</div>
+              <div>自作スクリプトのため初回承認時に警告画面が出ます。画面左下の<strong>「詳細」</strong>をクリックし、下に表示される<strong>「（プロジェクト名）（安全ではないページ）に移動」</strong>＞<strong>「許可」</strong>の順に進むと承認が完了します。</div>
+            </div>
+          </li>
+          <li>
+            <span class="font-bold text-stone-800 dark:text-slate-100">発行されたURLを貼り付けて同期</span><br />
+            表示された「ウェブアプリ URL」をコピーし、上の<strong>「URL入力・同期設定」タブ</strong>に貼り付けて「保存して同期」を押すと連携完了です。
+          </li>
+        </ol>
+
+        <div class="rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 p-3">
+          <div class="flex items-center justify-between mb-1.5">
+            <span id="gas-code-summary" class="font-bold text-slate-700 dark:text-slate-200">GASスクリプト例（コピーして使用）</span>
+            <button id="btn-copy-gas-code" type="button" class="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors">コードをコピー</button>
+          </div>
+          <pre id="gas-sample-code" class="p-2.5 rounded-lg bg-slate-900 text-slate-100 overflow-x-auto text-[11px] leading-relaxed"><code>function doGet() {
+  const cal = CalendarApp.getDefaultCalendar();
+  const events = cal.getEventsForDay(new Date());
+  const data = events.map(e => ({
+    id: e.getId(),
+    title: e.getTitle(),
+    start: e.getStartTime().toISOString(),
+    end: e.getEndTime().toISOString(),
+    isAllDay: e.isAllDayEvent(),
+    location: e.getLocation(),
+    description: e.getDescription()
+  }));
+  return ContentService.createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}</code></pre>
+        </div>
+
+        <div class="pt-1 flex justify-end">
+          <button id="btn-go-gas-url-tab" type="button" class="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-500 shadow-xs transition-colors">次へ（URLを入力する）</button>
+        </div>
+      </div>
+
+      <div id="gas-tab-panel-url" class="hidden flex-1 overflow-y-auto pr-1 flex flex-col justify-between">
+        <div>
+          <p id="gas-modal-desc" class="text-xs text-slate-500 dark:text-slate-400 mb-3 leading-relaxed">
+            Google Apps Script (GAS) のウェブアプリURLを入力すると、今日のGoogleカレンダーの予定を自動取得します（5分ごとに自動同期）。空欄で保存するとサンプル予定に戻ります。
+          </p>
+          <input id="gas-url-input" type="url" placeholder="https://script.google.com/macros/s/..." class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 mb-3" />
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-3 border-t border-[#EFE7D8] dark:border-slate-800">
+          <button id="btn-disconnect-gas" type="button" class="px-3.5 py-2 rounded-xl text-xs font-semibold border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">連携解除</button>
+          <button id="btn-save-gas" type="button" class="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-500 shadow-xs">保存して同期</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 予定詳細モーダル -->
+  <div id="event-detail-modal" data-modal-backdrop class="hidden fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-[#FFFDF9] dark:bg-slate-900 border border-[#E8DFCE] dark:border-slate-800 rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl">
+      <div class="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <span id="detail-badge" class="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 mb-1.5">予定詳細</span>
+          <h3 id="detail-title" class="text-lg font-bold text-slate-900 dark:text-white leading-snug">タイトル</h3>
+        </div>
+        <button type="button" data-close-modal="event-detail-modal" class="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="space-y-2.5 text-xs sm:text-sm text-slate-600 dark:text-slate-300">
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          <span id="detail-time" class="font-semibold tabular-nums">--:-- - --:--</span>
+        </div>
+        <div id="detail-location-row" class="hidden flex items-start gap-2">
+          <svg class="w-4 h-4 text-slate-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+            <circle cx="12" cy="10" r="3"></circle>
+          </svg>
+          <span id="detail-location" class="break-words"></span>
+        </div>
+        <div id="detail-desc-row" class="hidden pt-2 border-t border-slate-100 dark:border-slate-800">
+          <p id="detail-desc" class="whitespace-pre-wrap text-xs text-slate-600 dark:text-slate-300 leading-relaxed max-h-44 overflow-y-auto"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- メモ詳細モーダル -->
+  <div id="memo-detail-modal" data-modal-backdrop class="hidden fixed inset-0 z-[60] bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-[#FFFDF9] dark:bg-slate-900 border border-[#E8DFCE] dark:border-slate-800 rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl">
+      <div class="mb-3">
+        <div class="flex items-center justify-between gap-3 mb-1.5">
+          <span id="memo-detail-badge" class="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">メモ詳細</span>
+          <button type="button" data-close-modal="memo-detail-modal" class="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="flex items-baseline justify-between gap-2 pr-1.5">
+          <h3 id="memo-detail-title" class="text-lg font-bold text-slate-900 dark:text-white leading-snug tabular-nums clean-zero">#1</h3>
+          <span id="memo-detail-time" class="text-base sm:text-lg font-bold text-stone-700 dark:text-slate-200 leading-snug tabular-nums clean-zero shrink-0 text-right">00:00:00</span>
+        </div>
+      </div>
+
+      <div class="space-y-3 text-xs sm:text-sm text-slate-600 dark:text-slate-300">
+        <div class="flex items-center justify-between px-3 py-2 rounded-2xl bg-[#FAF5EB] dark:bg-slate-800/70 border border-[#E5DCCB] dark:border-slate-700">
+          <span id="memo-detail-elapsed-label" class="text-xs font-semibold text-stone-500 dark:text-slate-400">経過時間</span>
+          <span id="memo-detail-elapsed" class="font-sans text-sm font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums clean-zero">00:00:00</span>
+        </div>
+        <div>
+          <label id="memo-detail-note-label" for="memo-detail-textarea" class="block text-xs font-semibold text-stone-500 dark:text-slate-400 mb-1">メモ内容</label>
+          <textarea id="memo-detail-textarea" rows="4" maxlength="300" placeholder="コメントを入力..." class="w-full px-3 py-2 rounded-2xl bg-[#FAF5EB] dark:bg-slate-800/70 border border-[#E5DCCB] dark:border-slate-700 text-xs sm:text-sm text-stone-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 leading-relaxed"></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 時刻メモ一覧モーダル -->
+  <div id="memo-modal" data-modal-backdrop class="hidden fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-[#FFFDF9] dark:bg-slate-900 border border-[#E8DFCE] dark:border-slate-800 rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <h3 id="memo-modal-title" class="text-base sm:text-lg font-bold text-slate-900 dark:text-white">時刻メモ一覧</h3>
+          <button id="btn-delete-all-memos" type="button" class="px-2.5 py-1 rounded-xl text-xs font-semibold bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/70 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-colors">全て削除</button>
+        </div>
+        <button type="button" data-close-modal="memo-modal" class="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <form id="memo-form" class="flex gap-2 mb-4">
+        <input id="memo-input" type="text" maxlength="100" placeholder="現在時刻と一緒にメモを記録..." class="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+        <button id="btn-add-memo" type="submit" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-500 shrink-0">記録</button>
+      </form>
+      <div id="modal-memos-list" class="space-y-2 h-60 overflow-y-auto pr-1"></div>
+    </div>
+  </div>
+
+  <!-- トースト通知 -->
+  <div id="toast-banner" class="hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-semibold shadow-xl transition-opacity">通知メッセージ</div>
+
+  <!-- 予定事前通知ポップアップ -->
+  <div id="notify-popup" class="hidden fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 max-w-sm w-[calc(100%-2.5rem)] rounded-2xl bg-[#FFFDF9] dark:bg-slate-900 border-2 border-emerald-500 shadow-2xl p-4 sm:p-5">
+    <div class="flex items-start justify-between gap-3">
+      <div class="flex items-start gap-2.5 min-w-0">
+        <div class="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+          </svg>
+        </div>
+        <div class="min-w-0">
+          <div id="notify-popup-badge" class="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">予定のお知らせ</div>
+          <div id="notify-popup-title" class="text-sm font-bold text-slate-900 dark:text-white truncate mt-0.5">予定タイトル</div>
+          <div id="notify-popup-sub" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">10:00 開始</div>
+        </div>
+      </div>
+      <button type="button" data-close-modal="notify-popup" class="p-1 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEYS = {
+      GAS_URL: 'dc_gas_url_v1',
+      MEMOS: 'dc_time_memos_v1',
+      MEMO_COUNTER: 'dc_memo_counter_v1',
+      RECENT_MEMOS_VISIBLE: 'dc_recent_memos_visible_v1',
+      SCHEDULE_VISIBLE: 'dc_schedule_visible_v1',
+      COUNTDOWN_VISIBLE: 'dc_countdown_visible_v1',
+      NOTIFY_ENABLED: 'dc_notify_enabled_v1',
+      SILENT_NOTIFY: 'dc_silent_notify_v1',
+      NOTIFY_MINUTES: 'dc_notify_minutes_v1',
+      ALLDAY_POS: 'dc_allday_pos_v1',
+      PAST_POS: 'dc_past_pos_v1',
+      THEME: 'dc_theme_v1',
+      LANG: 'dc_lang_v1'
+    };
+
+    const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土'];
+
+    const BTN = {
+      iconActive: 'inline-flex items-center justify-center p-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500 shadow-xs transition-colors',
+      iconInactive: 'inline-flex items-center justify-center p-2 rounded-xl border border-[#E5DCCB] dark:border-slate-700 bg-[#F7F1E6] dark:bg-slate-800 text-stone-600 dark:text-slate-300 hover:bg-[#EFE6D6] dark:hover:bg-slate-700 transition-colors',
+      notifySound: 'h-7 whitespace-nowrap inline-flex items-center justify-center gap-1.5 px-2.5 rounded-xl text-xs font-semibold transition-colors bg-emerald-600 text-white shadow-xs hover:bg-emerald-500',
+      notifySilent: 'h-7 whitespace-nowrap inline-flex items-center justify-center gap-1.5 px-2.5 rounded-xl text-xs font-semibold transition-colors bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 shadow-xs hover:bg-emerald-200/80 dark:hover:bg-emerald-900/70',
+      notifyOff: 'h-7 whitespace-nowrap inline-flex items-center justify-center gap-1.5 px-2.5 rounded-xl text-xs font-semibold transition-colors border border-[#E5DCCB] dark:border-slate-700 bg-[#FAF5EB] dark:bg-slate-800 text-stone-500 dark:text-slate-400 hover:bg-[#EFE6D6] dark:hover:bg-slate-700 shadow-xs'
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const setTxt = (id, text) => {
+      const el = $(id);
+      if (el && el.textContent !== text) el.textContent = text;
+    };
+    const setToggle = (btnId, trackId, checked) => {
+      const val = String(Boolean(checked));
+      $(btnId)?.setAttribute('aria-checked', val);
+      $(trackId)?.setAttribute('data-checked', val);
+    };
+    const savePref = (key, val) => {
+      try { localStorage.setItem(key, String(val)); } catch {}
+    };
+    const escapeHtml = (str) => String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const formatTimeHM = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    const formatTimeHMS = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+    const formatElapsedHMS = (ms) => {
+      const sec = Math.max(0, Math.floor(ms / 1000));
+      return `${pad2(Math.floor(sec / 3600))}:${pad2(Math.floor((sec % 3600) / 60))}:${pad2(sec % 60)}`;
+    };
+
+    const helpBadge = (active, pathD) => {
+      const cls = active
+        ? 'bg-emerald-600 text-white'
+        : 'border border-[#E5DCCB] dark:border-slate-700 bg-[#F7F1E6] dark:bg-slate-800 text-stone-600 dark:text-slate-300';
+      return `<span class="inline-flex items-center justify-center align-middle px-1.5 py-0.5 mx-0.5 rounded-md ${cls}"><svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${pathD}</svg></span>`;
+    };
+
+    const RESET_ICON = '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path>';
+    const LINK_ICON = '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>';
+
+    const I18N = {
+      ja: {
+        settingsTitle: '表示・機能設定',
+        notifyRowLabel: '予定の事前通知',
+        notifyStateSound: '音あり通知',
+        notifyStateSilent: 'サイレント',
+        notifyStateOff: '通知OFF',
+        memoToggleLabel: '時刻メモ表示',
+        scheduleToggleLabel: '予定リスト表示',
+        countdownToggleLabel: 'カウントダウン表示',
+        wakeLockToggleLabel: '画面の常時点灯',
+        fullscreenToggleLabel: '全画面表示',
+        themeRowLabel: 'スタイル',
+        themeLight: 'ライト',
+        themeDark: 'ダーク',
+        langRowLabel: '表示言語',
+        countdownUntilSuffix: 'まで',
+        countdownEndSuffix: '終了まで',
+        countdownNoneTitle: '以降のカウントダウン可能な予定はありません',
+        pastKeep: '終了スケジュール: そのまま',
+        pastBottom: '終了スケジュール: 下部',
+        pastHide: '終了スケジュール: 消去',
+        endedTag: '終了',
+        langToggle: 'English',
+        notifyMinutesLabel: '事前通知時間',
+        notifyMinutesUnit: '分前',
+        testNotifyBtn: '通知テスト',
+        memoBtn: '現在時刻をメモ',
+        memoListPrefix: '一覧',
+        allDayTop: '終日: 上部',
+        allDayBottom: '終日: 下部',
+        allDayTag: '終日',
+        resetCountdownTitle: '自動カウントダウンに戻す',
+        helpTitle: '操作説明',
+        helpItems: [
+          `予定カードを1回タップすると選択（ブルー表示）になり、その予定までのカウントダウンに切り替わります。右上の ${helpBadge(false, RESET_ICON)} または現在進行中の予定をタップで自動カウントダウンに戻ります。自動カウントダウン時は ${helpBadge(true, RESET_ICON)} に切り替わります。`,
+          '自動カウントダウン時は現在進行中の予定終了まで、または直近の予定開始までのカウントダウンに切り替わります。',
+          '予定カードや時刻メモをダブルタップすると詳細（時間・場所・メモ全文）を確認できます。',
+          `Googleカレンダーが正常に連携されると ${helpBadge(false, LINK_ICON)} が ${helpBadge(true, LINK_ICON)} に切り替わります。`,
+          'このアプリに入力した GASのURL・時刻メモ・表示設定 は、すべてアクセスした端末のブラウザ内（localStorage）にのみ保存されます。'
+        ],
+        gasModalTitle: 'Googleカレンダー連携 (GAS)',
+        gasTabGuide: '連携方法の説明',
+        gasTabUrl: 'URL入力・同期設定',
+        gasGuideIntro: 'Google Apps Script（無料）を使って、ご自身のGoogleカレンダーの予定を安全に読み込む手順です。',
+        gasCopyCodeBtn: 'コードをコピー',
+        gasCopiedToast: 'GASコードをコピーしました',
+        gasNextToUrlBtn: '次へ（URLを入力する）',
+        gasModalDesc: 'Google Apps Script (GAS) のウェブアプリURLを入力すると、今日のGoogleカレンダーの予定を自動取得します（5分ごとに自動同期）。空欄で保存するとサンプル予定に戻ります。',
+        gasCodeSummary: 'GASスクリプト例（コピーして使用）',
+        gasDisconnect: '連携解除',
+        gasSave: '保存して同期',
+        detailBadge: '予定詳細',
+        detailClose: '閉じる',
+        memoDetailBadge: 'メモ詳細',
+        memoDetailElapsedLabel: '経過時間',
+        memoDetailNoteLabel: 'メモ内容',
+        memoModalTitle: '時刻メモ一覧',
+        deleteAllBtn: '全て削除',
+        memoPlaceholder: 'メモを追加して記録...',
+        memoRecordBtn: '記録',
+        memoCommentPlaceholder: 'コメントを入力...',
+        noEvents: '本日の予定はありません',
+        noMemosModal: '記録された時刻メモはありません',
+        syncing: '同期中...',
+        synced: '同期完了',
+        syncFailed: '同期失敗（サンプル表示）',
+        notifyPopupBadge: '予定のお知らせ',
+        notifyTestTitle: 'テスト通知（予定のお知らせ）',
+        notifyTestSub: '通知音とポップアップの動作確認です'
+      },
+      en: {
+        settingsTitle: 'Display & Features',
+        notifyRowLabel: 'Pre-Event Alert',
+        notifyStateSound: 'Sound ON',
+        notifyStateSilent: 'Silent',
+        notifyStateOff: 'Alert OFF',
+        memoToggleLabel: 'Show Recent Memos',
+        scheduleToggleLabel: 'Show Schedule List',
+        countdownToggleLabel: 'Show Countdown',
+        wakeLockToggleLabel: 'Keep Screen Awake',
+        fullscreenToggleLabel: 'Fullscreen Mode',
+        themeRowLabel: 'Style',
+        themeLight: 'Light',
+        themeDark: 'Dark',
+        langRowLabel: 'Language',
+        countdownUntilSuffix: ' (Start)',
+        countdownEndSuffix: ' (End)',
+        countdownNoneTitle: 'No upcoming events today',
+        pastKeep: 'Ended: Keep',
+        pastBottom: 'Ended: Bottom',
+        pastHide: 'Ended: Hide',
+        endedTag: 'Ended',
+        langToggle: '日本語',
+        notifyMinutesLabel: 'Alert Lead Time',
+        notifyMinutesUnit: ' min before',
+        testNotifyBtn: 'Test Alert',
+        memoBtn: 'Memo Current Time',
+        memoListPrefix: 'List',
+        allDayTop: 'All-Day: Top',
+        allDayBottom: 'All-Day: Bottom',
+        allDayTag: 'All Day',
+        resetCountdownTitle: 'Reset to Auto Countdown',
+        helpTitle: 'Quick Guide',
+        helpItems: [
+          `Tap an event card once to select it (blue) and count down to that event. Tap ${helpBadge(false, RESET_ICON)} or an active event to return to automatic mode. While in automatic mode, ${helpBadge(true, RESET_ICON)} turns green.`,
+          'In automatic countdown mode, it switches to counting down to the end of the ongoing event or the start of the nearest upcoming event.',
+          'Double-tap an event card or time memo to view full details.',
+          `When Google Calendar is successfully connected, ${helpBadge(false, LINK_ICON)} turns into ${helpBadge(true, LINK_ICON)}.`,
+          'All GAS URLs, time memos, and display settings entered in this app are saved exclusively in your browser’s local storage (localStorage) on this device.'
+        ],
+        gasModalTitle: 'Google Calendar Sync (GAS)',
+        gasTabGuide: 'Setup Guide',
+        gasTabUrl: 'URL & Sync Settings',
+        gasGuideIntro: 'Follow these steps to securely fetch your Google Calendar events using free Google Apps Script.',
+        gasCopyCodeBtn: 'Copy Code',
+        gasCopiedToast: 'GAS script copied to clipboard',
+        gasNextToUrlBtn: 'Next (Enter URL)',
+        gasModalDesc: 'Enter your Google Apps Script Web App URL to automatically fetch today’s Google Calendar events (syncs every 5 mins). Leave blank to restore sample events.',
+        gasCodeSummary: 'GAS Script Example (Copy & Paste)',
+        gasDisconnect: 'Disconnect',
+        gasSave: 'Save & Sync',
+        detailBadge: 'Event Details',
+        detailClose: 'Close',
+        memoDetailBadge: 'Memo Details',
+        memoDetailElapsedLabel: 'Elapsed Time',
+        memoDetailNoteLabel: 'Memo Content',
+        memoModalTitle: 'Time Memos',
+        deleteAllBtn: 'Delete All',
+        memoPlaceholder: 'Add a note with current time...',
+        memoRecordBtn: 'Record',
+        memoCommentPlaceholder: 'Add comment...',
+        noEvents: 'No events scheduled for today',
+        noMemosModal: 'No time memos recorded yet',
+        syncing: 'Syncing...',
+        synced: 'Synced',
+        syncFailed: 'Sync failed (Sample)',
+        notifyPopupBadge: 'Upcoming Event',
+        notifyTestTitle: 'Test Notification',
+        notifyTestSub: 'Preview of alert sound & popup banner'
+      }
+    };
+
+    const state = {
+      lang: localStorage.getItem(STORAGE_KEYS.LANG) || 'ja',
+      theme: localStorage.getItem(STORAGE_KEYS.THEME) || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
+      allDayPosition: localStorage.getItem(STORAGE_KEYS.ALLDAY_POS) || 'top',
+      pastPosition: localStorage.getItem(STORAGE_KEYS.PAST_POS) || 'keep',
+      selectedEventId: null,
+      recentMemosVisible: localStorage.getItem(STORAGE_KEYS.RECENT_MEMOS_VISIBLE) !== 'false',
+      scheduleVisible: localStorage.getItem(STORAGE_KEYS.SCHEDULE_VISIBLE) !== 'false',
+      countdownVisible: localStorage.getItem(STORAGE_KEYS.COUNTDOWN_VISIBLE) !== 'false',
+      notifyEnabled: localStorage.getItem(STORAGE_KEYS.NOTIFY_ENABLED) !== 'false',
+      silentNotify: localStorage.getItem(STORAGE_KEYS.SILENT_NOTIFY) === 'true',
+      notifyMinutes: Math.min(60, Math.max(1, parseInt(localStorage.getItem(STORAGE_KEYS.NOTIFY_MINUTES) || '5', 10) || 5)),
+      wakeLock: null,
+      wakeLockActive: false,
+      gasUrl: localStorage.getItem(STORAGE_KEYS.GAS_URL) || '',
+      events: [],
+      memos: [],
+      memoCounter: parseInt(localStorage.getItem(STORAGE_KEYS.MEMO_COUNTER) || '0', 10) || 0,
+      activeDetailMemoId: null,
+      notifiedIds: new Set(),
+      lastEventTapTime: 0,
+      lastEventTapId: null,
+      lastMemoTapTime: 0,
+      lastMemoTapId: null
+    };
+
+    try {
+      const savedMemos = JSON.parse(localStorage.getItem(STORAGE_KEYS.MEMOS) || '[]');
+      if (Array.isArray(savedMemos)) {
+        const total = savedMemos.length;
+        state.memos = savedMemos.map((m, idx) => ({ ...m, num: typeof m.num === 'number' ? m.num : total - idx }));
+        const maxNum = state.memos.reduce((max, m) => Math.max(max, m.num || 0), 0);
+        state.memoCounter = total === 0 ? 0 : Math.max(state.memoCounter, maxNum);
+      }
+    } catch {}
+
+    function normalizeEvents(rawList) {
+      return rawList.map((item, idx) => {
+        const startMs = Date.parse(item.start);
+        const endMs = Date.parse(item.end);
+        return {
+          id: String(item.id || `ev-${idx}`),
+          title: item.title || '(No Title)',
+          start: item.start,
+          end: item.end,
+          startMs: Number.isNaN(startMs) ? 0 : startMs,
+          endMs: Number.isNaN(endMs) ? 0 : endMs,
+          isAllDay: Boolean(item.isAllDay),
+          location: item.location || '',
+          description: item.description || ''
+        };
+      });
+    }
+
+    function getSampleEvents() {
+      const now = new Date();
+      const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+      const at = (h, min) => new Date(y, m, d, h, min, 0).toISOString();
+      const offset = (mins) => new Date(now.getTime() + mins * 60000).toISOString();
+      const ja = state.lang === 'ja';
+
+      return normalizeEvents([
+        { id: 'sample-allday', title: ja ? 'プロジェクト定例ウィーク' : 'Project Sprint Week', start: at(0, 0), end: at(23, 59), isAllDay: true, description: ja ? '終日予定のサンプルです。' : 'Sample all-day event.' },
+        { id: 'sample-ended', title: ja ? '朝会・タスク確認' : 'Morning Standup', start: offset(-120), end: offset(-90), location: ja ? 'オンライン (Meet)' : 'Online (Meet)', description: ja ? '本日のタスク優先順位と進捗の共有。' : 'Daily task priority and progress sync.' },
+        { id: 'sample-ongoing', title: ja ? 'デザインレビュー会議' : 'Design Review Meeting', start: offset(-15), end: offset(30), location: ja ? '第2会議室' : 'Meeting Room B', description: ja ? 'UI改善案の最終確認とフィードバック。' : 'Final review and feedback on UI updates.' },
+        { id: 'sample-next-1', title: ja ? 'クライアント打ち合わせ' : 'Client Sync Call', start: offset(60), end: offset(120), location: ja ? 'Zoom ミーティング' : 'Zoom Meeting', description: ja ? '次期リリーススケジュールの調整。' : 'Schedule alignment for next release.' },
+        { id: 'sample-next-2', title: ja ? '資料作成・企画まとめ' : 'Proposal Drafting', start: offset(150), end: offset(210), location: ja ? '自席 / 集中タイム' : 'Desk / Focus Time', description: ja ? '来週のプレゼン資料ドラフト作成。' : 'Drafting next week presentation slides.' },
+        { id: 'sample-next-3', title: ja ? 'チーム1on1ミーティング' : 'Team 1-on-1 Session', start: offset(240), end: offset(270), location: ja ? 'ラウンジスペース' : 'Lounge Area', description: ja ? '業務相談と今月の振り返り。' : 'Monthly check-in and feedback.' },
+        { id: 'sample-next-4', title: ja ? '日報作成・明日の準備' : 'Daily Wrap-up & Prep', start: offset(300), end: offset(330), description: ja ? '本日の作業記録と翌日の予定確認。' : 'Log daily progress and check tomorrow schedule.' }
+      ]);
+    }
+
+    let audioCtx = null;
+    function playNotificationChime() {
+      if (state.silentNotify) return;
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        if (!audioCtx) audioCtx = new AudioCtx();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const now = audioCtx.currentTime + 0.02;
+
+        const notes = [
+          { freq: 1046.50, start: 0.00, dur: 0.11 },
+          { freq: 1318.51, start: 0.11, dur: 0.11 },
+          { freq: 1567.98, start: 0.22, dur: 0.11 },
+          { freq: 2093.00, start: 0.34, dur: 0.36 },
+          { freq: 1567.98, start: 0.56, dur: 0.10 },
+          { freq: 2093.00, start: 0.67, dur: 0.42 }
+        ];
+
+        notes.forEach((n) => {
+          const osc = audioCtx.createOscillator();
+          const sparkleOsc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          const sparkleGain = audioCtx.createGain();
+
+          osc.type = 'sine';
+          sparkleOsc.type = 'triangle';
+          osc.frequency.setValueAtTime(n.freq, now + n.start);
+          sparkleOsc.frequency.setValueAtTime(n.freq * 1.5, now + n.start);
+
+          sparkleGain.gain.setValueAtTime(0.035, now + n.start);
+          sparkleGain.gain.exponentialRampToValueAtTime(0.0005, now + n.start + n.dur);
+
+          gain.gain.setValueAtTime(0.0001, now + n.start);
+          gain.gain.linearRampToValueAtTime(0.2, now + n.start + 0.015);
+          gain.gain.exponentialRampToValueAtTime(0.0008, now + n.start + n.dur + 0.08);
+
+          osc.connect(gain);
+          sparkleOsc.connect(sparkleGain);
+          sparkleGain.connect(gain);
+          gain.connect(audioCtx.destination);
+
+          osc.start(now + n.start);
+          sparkleOsc.start(now + n.start);
+          osc.stop(now + n.start + n.dur + 0.1);
+          sparkleOsc.stop(now + n.start + n.dur + 0.1);
+        });
+      } catch {}
+    }
+
+    function showNotifyPopup(title, sub) {
+      const popup = $('notify-popup');
+      if (!popup) return;
+      setTxt('notify-popup-badge', I18N[state.lang].notifyPopupBadge);
+      setTxt('notify-popup-title', title);
+      setTxt('notify-popup-sub', sub);
+      popup.classList.remove('hidden');
+      playNotificationChime();
+    }
+
+    let toastTimer = null;
+    function showToast(msg) {
+      const toast = $('toast-banner');
+      if (!toast) return;
+      toast.textContent = msg;
+      toast.classList.remove('hidden');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.add('hidden'), 2500);
+    }
+
+    function applyTheme() {
+      const isDark = state.theme === 'dark';
+      const dict = I18N[state.lang];
+      document.documentElement.classList.toggle('dark', isDark);
+      setTxt('theme-label', isDark ? dict.themeLight : dict.themeDark);
+    }
+
+    function applyLayoutUI() {
+      const dict = I18N[state.lang];
+      const notifyBtn = $('btn-notify');
+      const bellIcon = $('notify-icon-bell');
+      const silentIcon = $('notify-icon-silent');
+      const testNotifyBtn = $('btn-test-notify');
+
+      if (notifyBtn) {
+        if (state.notifyEnabled && !state.silentNotify) {
+          notifyBtn.className = BTN.notifySound;
+          bellIcon?.classList.remove('hidden');
+          silentIcon?.classList.add('hidden');
+          setTxt('notify-label', dict.notifyStateSound);
+        } else if (state.notifyEnabled && state.silentNotify) {
+          notifyBtn.className = BTN.notifySilent;
+          bellIcon?.classList.add('hidden');
+          silentIcon?.classList.remove('hidden');
+          setTxt('notify-label', dict.notifyStateSilent);
+        } else {
+          notifyBtn.className = BTN.notifyOff;
+          bellIcon?.classList.remove('hidden');
+          silentIcon?.classList.add('hidden');
+          setTxt('notify-label', dict.notifyStateOff);
+        }
+      }
+
+      if (testNotifyBtn) {
+        testNotifyBtn.disabled = !state.notifyEnabled;
+        $('test-notify-disabled-icon')?.classList.toggle('hidden', state.notifyEnabled);
+      }
+
+      setToggle('btn-toggle-recent-memos', 'toggle-recent-memos-track', state.recentMemosVisible);
+      $('recent-memos-container')?.classList.toggle('hidden', !state.recentMemosVisible);
+
+      setToggle('btn-toggle-schedule', 'toggle-schedule-track', state.scheduleVisible);
+      $('events-card')?.classList.toggle('hidden', !state.scheduleVisible);
+
+      const helpAnchor = $('help-anchor');
+      const clockHelpSlot = $('clock-help-slot');
+      const eventsHelpSlot = $('events-help-slot');
+      if (helpAnchor && clockHelpSlot && eventsHelpSlot) {
+        const targetSlot = state.scheduleVisible ? eventsHelpSlot : clockHelpSlot;
+        if (helpAnchor.parentElement !== targetSlot) targetSlot.appendChild(helpAnchor);
+        clockHelpSlot.classList.toggle('hidden', state.scheduleVisible);
+      }
+
+      const countdownBtn = $('btn-toggle-countdown');
+      if (countdownBtn) countdownBtn.disabled = !state.scheduleVisible;
+      setToggle('btn-toggle-countdown', 'toggle-countdown-track', state.scheduleVisible && state.countdownVisible);
+      $('event-countdown-box')?.classList.toggle('hidden', !state.scheduleVisible || !state.countdownVisible);
+
+      const leftCol = $('left-column');
+      const rightCol = $('right-column');
+      if (rightCol && leftCol) {
+        rightCol.classList.toggle('hidden', !state.scheduleVisible);
+        leftCol.className = `${state.scheduleVisible ? 'col-span-6' : 'col-span-12'} h-full min-h-0 flex flex-col`;
+      }
+
+      setToggle('btn-fullscreen', 'fullscreen-track', Boolean(document.fullscreenElement || document.webkitFullscreenElement));
+      setToggle('btn-wakelock', 'wakelock-track', state.wakeLockActive);
+
+      setTxt('notify-minutes-display', `${state.notifyMinutes}${dict.notifyMinutesUnit}`);
+      const slider = $('notify-minutes-slider');
+      if (slider) slider.value = String(state.notifyMinutes);
+
+      updateViewportScale();
+    }
+
+    function updateViewportScale() {
+      const scaler = $('app-viewport-scaler');
+      if (!scaler) return;
+      const minW = state.scheduleVisible ? 880 : 480;
+      const scale = Math.min(1, window.innerWidth / minW, window.innerHeight / 560);
+      if (scale < 0.999) {
+        scaler.style.width = `${(100 / scale).toFixed(4)}%`;
+        scaler.style.height = `${(100 / scale).toFixed(4)}%`;
+        scaler.style.transform = `scale(${scale.toFixed(4)})`;
+      } else {
+        scaler.style.width = '100%';
+        scaler.style.height = '100%';
+        scaler.style.transform = 'none';
+      }
+    }
+
+    function applyTranslations() {
+      const dict = I18N[state.lang];
+      const textMap = {
+        'settings-popover-title': dict.settingsTitle,
+        'notify-row-label': dict.notifyRowLabel,
+        'toggle-recent-memos-label': dict.memoToggleLabel,
+        'toggle-schedule-label': dict.scheduleToggleLabel,
+        'toggle-countdown-label': dict.countdownToggleLabel,
+        'wakelock-label': dict.wakeLockToggleLabel,
+        'fullscreen-label': dict.fullscreenToggleLabel,
+        'theme-row-label': dict.themeRowLabel,
+        'lang-row-label': dict.langRowLabel,
+        'lang-label': dict.langToggle,
+        'notify-minutes-label': dict.notifyMinutesLabel,
+        'test-notify-label': dict.testNotifyBtn,
+        'memo-btn-label': dict.memoBtn,
+        'past-pos-label': state.pastPosition === 'bottom' ? dict.pastBottom : state.pastPosition === 'hide' ? dict.pastHide : dict.pastKeep,
+        'allday-pos-label': state.allDayPosition === 'top' ? dict.allDayTop : dict.allDayBottom,
+        'help-popover-title': dict.helpTitle,
+        'gas-modal-title': dict.gasModalTitle,
+        'btn-gas-tab-guide': dict.gasTabGuide,
+        'btn-gas-tab-url': dict.gasTabUrl,
+        'gas-guide-intro': dict.gasGuideIntro,
+        'btn-copy-gas-code': dict.gasCopyCodeBtn,
+        'btn-go-gas-url-tab': dict.gasNextToUrlBtn,
+        'gas-modal-desc': dict.gasModalDesc,
+        'gas-code-summary': dict.gasCodeSummary,
+        'btn-disconnect-gas': dict.gasDisconnect,
+        'btn-save-gas': dict.gasSave,
+        'detail-badge': dict.detailBadge,
+        'memo-detail-badge': dict.memoDetailBadge,
+        'memo-detail-elapsed-label': dict.memoDetailElapsedLabel,
+        'memo-detail-note-label': dict.memoDetailNoteLabel,
+        'memo-modal-title': dict.memoModalTitle,
+        'btn-delete-all-memos': dict.deleteAllBtn,
+        'btn-add-memo': dict.memoRecordBtn
+      };
+      Object.entries(textMap).forEach(([id, txt]) => setTxt(id, txt));
+
+      const resetBtn = $('btn-reset-countdown');
+      if (resetBtn) {
+        resetBtn.title = dict.resetCountdownTitle;
+        resetBtn.setAttribute('aria-label', dict.resetCountdownTitle);
+      }
+      const helpBtn = $('btn-help');
+      if (helpBtn) {
+        helpBtn.title = dict.helpTitle;
+        helpBtn.setAttribute('aria-label', dict.helpTitle);
+      }
+
+      const memoInput = $('memo-input');
+      if (memoInput) memoInput.placeholder = dict.memoPlaceholder;
+      const memoDetailTa = $('memo-detail-textarea');
+      if (memoDetailTa) memoDetailTa.placeholder = dict.memoCommentPlaceholder;
+
+      const helpList = $('help-list');
+      if (helpList) helpList.innerHTML = dict.helpItems.map((item) => `<li>${item}</li>`).join('');
+
+      applyTheme();
+      applyLayoutUI();
+      renderEvents();
+      renderMemos();
+      updateClockAndCountdown();
+    }
+
+    async function fetchCalendarEvents() {
+      const badge = $('sync-badge');
+      const connectBtn = $('btn-connect-gas');
+      const dict = I18N[state.lang];
+      const setConnected = (connected) => {
+        if (connectBtn) connectBtn.className = connected ? BTN.iconActive : BTN.iconInactive;
+      };
+
+      if (!state.gasUrl) {
+        state.events = getSampleEvents();
+        badge?.classList.add('hidden');
+        setConnected(false);
+        renderEvents();
+        updateClockAndCountdown();
+        return;
+      }
+
+      if (badge) {
+        badge.textContent = dict.syncing;
+        badge.classList.remove('hidden');
+      }
+
+      try {
+        const res = await fetch(state.gasUrl, { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP');
+        const json = await res.json();
+        if (!Array.isArray(json)) throw new Error('JSON');
+        state.events = normalizeEvents(json);
+        setConnected(true);
+        if (badge) {
+          badge.textContent = `${dict.synced} ${formatTimeHM(new Date())}`;
+          badge.classList.remove('hidden');
+        }
+      } catch {
+        state.events = getSampleEvents();
+        setConnected(false);
+        if (badge) {
+          badge.textContent = dict.syncFailed;
+          badge.classList.remove('hidden');
+        }
+      }
+
+      renderEvents();
+      updateClockAndCountdown();
+    }
+
+    function openEventDetail(ev) {
+      const modal = $('event-detail-modal');
+      if (!modal) return;
+      const dict = I18N[state.lang];
+      setTxt('detail-title', ev.title);
+      setTxt('detail-time', ev.isAllDay ? dict.allDayTag : `${formatTimeHM(new Date(ev.startMs))} - ${formatTimeHM(new Date(ev.endMs))}`);
+
+      const hasLoc = Boolean(ev.location && ev.location.trim());
+      if (hasLoc) setTxt('detail-location', ev.location.trim());
+      $('detail-location-row')?.classList.toggle('hidden', !hasLoc);
+
+      const hasDesc = Boolean(ev.description && ev.description.trim());
+      if (hasDesc) setTxt('detail-desc', ev.description.trim());
+      $('detail-desc-row')?.classList.toggle('hidden', !hasDesc);
+
+      modal.classList.remove('hidden');
+    }
+
+    function openMemoDetail(memo) {
+      const modal = $('memo-detail-modal');
+      if (!modal || !memo) return;
+      state.activeDetailMemoId = memo.id;
+      setTxt('memo-detail-title', `#${memo.num}`);
+      setTxt('memo-detail-time', memo.timeStr);
+      setTxt('memo-detail-elapsed', formatElapsedHMS(Date.now() - memo.timestamp));
+      const ta = $('memo-detail-textarea');
+      if (ta) ta.value = memo.note || '';
+      modal.classList.remove('hidden');
+    }
+
+    function renderEvents() {
+      const listEl = $('events-list');
+      if (!listEl) return;
+      const dict = I18N[state.lang];
+      const nowMs = Date.now();
+
+      const resetBtn = $('btn-reset-countdown');
+      if (resetBtn) {
+        resetBtn.className = state.selectedEventId === null
+          ? BTN.iconActive
+          : 'inline-flex items-center justify-center p-2 rounded-xl border border-[#E5DCCB] dark:border-slate-700 bg-[#F7F1E6] dark:bg-slate-800 text-stone-500 dark:text-slate-400 hover:bg-[#EFE6D6] dark:hover:bg-slate-700 transition-colors';
+      }
+
+      const allDayEvents = state.events.filter((e) => e.isAllDay);
+      const sortedTimed = state.events.filter((e) => !e.isAllDay).sort((a, b) => a.startMs - b.startMs);
+
+      let ordered;
+      if (state.pastPosition === 'bottom') {
+        const activeOrUpcoming = sortedTimed.filter((e) => e.endMs > nowMs);
+        const pastOnly = sortedTimed.filter((e) => e.endMs <= nowMs);
+        ordered = state.allDayPosition === 'top'
+          ? [...allDayEvents, ...activeOrUpcoming, ...pastOnly]
+          : [...activeOrUpcoming, ...allDayEvents, ...pastOnly];
+      } else {
+        const filtered = state.pastPosition === 'hide' ? sortedTimed.filter((e) => e.endMs > nowMs) : sortedTimed;
+        ordered = state.allDayPosition === 'top' ? [...allDayEvents, ...filtered] : [...filtered, ...allDayEvents];
+      }
+
+      if (ordered.length === 0) {
+        listEl.innerHTML = `<div class="h-full flex items-center justify-center text-xs text-slate-400 py-8">${escapeHtml(dict.noEvents)}</div>`;
+        return;
+      }
+
+      listEl.innerHTML = ordered.map((ev) => {
+        const isCurrent = !ev.isAllDay && ev.startMs <= nowMs && ev.endMs > nowMs;
+        const isPast = !ev.isAllDay && ev.endMs <= nowMs;
+        const isSelected = state.selectedEventId === ev.id;
+
+        let cardCls = 'border-2 rounded-2xl px-3.5 py-2.5 h-[4.25rem] flex items-center justify-between gap-3 cursor-pointer select-none transition-colors ';
+        let timeCls = 'font-sans text-xs font-extrabold tabular-nums clean-zero ';
+        let titleCls = 'text-xs sm:text-sm font-bold truncate ';
+        let locCls = 'text-[11px] truncate mt-0.5 ';
+
+        if (isCurrent) {
+          cardCls += 'bg-emerald-100/90 dark:bg-emerald-950/75 border-emerald-300 dark:border-emerald-700 text-emerald-950 dark:text-emerald-100 shadow-xs';
+          timeCls += 'text-emerald-700 dark:text-emerald-300';
+          titleCls += 'text-emerald-950 dark:text-emerald-100';
+          locCls += 'text-emerald-800/80 dark:text-emerald-200/80';
+        } else if (isSelected) {
+          cardCls += 'bg-blue-100/90 dark:bg-blue-950/75 border-blue-300 dark:border-blue-700 text-blue-950 dark:text-blue-100 shadow-xs';
+          timeCls += 'text-blue-700 dark:text-blue-300';
+          titleCls += 'text-blue-950 dark:text-blue-100';
+          locCls += 'text-blue-800/80 dark:text-blue-200/80';
+        } else if (isPast) {
+          cardCls += 'bg-stone-200/80 dark:bg-slate-800/35 border-stone-300/80 dark:border-slate-800/90 text-stone-400 dark:text-slate-600 opacity-60';
+          timeCls += 'text-stone-400 dark:text-slate-600';
+          titleCls += 'text-stone-400 dark:text-slate-600';
+          locCls += 'text-stone-400 dark:text-slate-600';
+        } else {
+          cardCls += 'bg-[#FAF5EB] dark:bg-slate-800/70 border-[#E5DCCB] dark:border-slate-700 hover:border-emerald-400 dark:hover:border-emerald-600 text-stone-800 dark:text-slate-100';
+          timeCls += 'text-emerald-600 dark:text-emerald-400';
+          titleCls += 'text-stone-800 dark:text-slate-100';
+          locCls += 'text-stone-500 dark:text-slate-400';
+        }
+
+        const timeLabel = ev.isAllDay
+          ? escapeHtml(dict.allDayTag)
+          : `${formatTimeHM(new Date(ev.startMs))} - ${formatTimeHM(new Date(ev.endMs))}`;
+
+        const locHtml = ev.location && ev.location.trim()
+          ? `<div class="${locCls}">${escapeHtml(ev.location.trim())}</div>`
+          : `<div class="${locCls} opacity-0">-</div>`;
+
+        return `<div data-event-id="${escapeHtml(ev.id)}" class="${cardCls}"><div class="min-w-0 flex-1"><div class="${titleCls}">${escapeHtml(ev.title)}</div>${locHtml}</div><div class="${timeCls} shrink-0">${timeLabel}</div></div>`;
+      }).join('');
+    }
+
+    function saveMemos() {
+      try {
+        localStorage.setItem(STORAGE_KEYS.MEMOS, JSON.stringify(state.memos));
+        localStorage.setItem(STORAGE_KEYS.MEMO_COUNTER, String(state.memoCounter));
+      } catch {}
+    }
+
+    function syncMemoNote(memoId, newNote, sourceEl = null) {
+      const target = state.memos.find((m) => m.id === memoId);
+      if (!target) return;
+      target.note = newNote;
+      saveMemos();
+      document.querySelectorAll(`[data-memo-comment="${CSS.escape(memoId)}"]`).forEach((el) => {
+        if (el !== sourceEl) el.value = newNote;
+      });
+    }
+
+    function addCurrentTimeMemo(noteText = '') {
+      const now = new Date();
+      state.memoCounter += 1;
+      state.memos.unshift({
+        id: `${now.getTime()}-${Math.random().toString(36).slice(2, 6)}`,
+        num: state.memoCounter,
+        timestamp: now.getTime(),
+        timeStr: formatTimeHMS(now),
+        note: noteText.trim()
+      });
+      saveMemos();
+      renderMemos();
+      const modalList = $('modal-memos-list');
+      if (modalList) modalList.scrollTop = 0;
+    }
+
+    function buildMemoRowHtml(m, nowMs, placeholder, isModal) {
+      const borderCls = isModal ? 'border-[#E5DCCB] dark:border-slate-700' : 'border-[#E5DCCB] dark:border-slate-700/80';
+      const subCls = isModal ? 'shrink-0' : 'shrink-0 text-left';
+      return `
+        <div data-memo-row="${escapeHtml(m.id)}" class="rounded-2xl bg-[#FAF5EB] dark:bg-slate-800/70 border ${borderCls} px-3 py-2 flex items-center gap-2 cursor-pointer select-none">
+          <span class="font-sans text-xs font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums clean-zero shrink-0">#${m.num}</span>
+          <div class="${subCls}">
+            <div class="font-sans text-xs font-extrabold text-stone-800 dark:text-slate-100 tabular-nums clean-zero">${escapeHtml(m.timeStr)}</div>
+            <div data-memo-elapsed="${escapeHtml(m.id)}" class="font-sans text-[11px] font-bold text-emerald-600 dark:text-emerald-400 tabular-nums clean-zero">${formatElapsedHMS(nowMs - m.timestamp)}</div>
+          </div>
+          <input type="text" data-memo-comment="${escapeHtml(m.id)}" value="${escapeHtml(m.note)}" placeholder="${escapeHtml(placeholder)}" class="flex-1 min-w-0 px-2.5 py-1.5 rounded-xl bg-[#FFFDF9] dark:bg-slate-900 border border-[#E5DCCB] dark:border-slate-700 text-xs text-stone-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+          <button type="button" data-memo-del="${escapeHtml(m.id)}" aria-label="削除" class="p-1.5 rounded-lg text-stone-400 hover:text-rose-500 hover:bg-[#EFE6D6] dark:hover:bg-slate-700/60 shrink-0 transition-colors">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>`;
+    }
+
+    function renderMemos() {
+      const dict = I18N[state.lang];
+      const nowMs = Date.now();
+      const total = state.memos.length;
+      setTxt('memo-list-btn-label', `${dict.memoListPrefix} (${total})`);
+
+      const recentList = $('recent-memos-list');
+      if (recentList) {
+        recentList.innerHTML = state.memos.slice(0, 5).map((m) => buildMemoRowHtml(m, nowMs, dict.memoCommentPlaceholder, false)).join('');
+      }
+
+      const modalList = $('modal-memos-list');
+      if (modalList) {
+        modalList.innerHTML = total === 0
+          ? `<div class="h-full flex items-center justify-center text-xs text-slate-400">${escapeHtml(dict.noMemosModal)}</div>`
+          : state.memos.map((m) => buildMemoRowHtml(m, nowMs, dict.memoCommentPlaceholder, true)).join('');
+      }
+    }
+
+    let lastRenderedMinute = -1;
+
+    function updateClockAndCountdown() {
+      const now = new Date();
+      const nowMs = now.getTime();
+      const dict = I18N[state.lang];
+
+      setTxt('clock-time', formatTimeHMS(now));
+
+      const reiwaEl = $('reiwa-display');
+      if (state.lang === 'ja') {
+        const reiwaYear = now.getFullYear() - 2018;
+        setTxt('reiwa-display', reiwaYear === 1 ? '令和元年' : `令和${reiwaYear}年`);
+        reiwaEl?.classList.remove('hidden');
+        setTxt('date-display', `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 (${WEEKDAYS_JA[now.getDay()]})`);
+      } else {
+        reiwaEl?.classList.add('hidden');
+        setTxt('date-display', now.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }));
+      }
+
+      if (state.memos.length > 0) {
+        const memoMap = new Map(state.memos.map((m) => [m.id, m.timestamp]));
+        document.querySelectorAll('[data-memo-elapsed]').forEach((el) => {
+          const ts = memoMap.get(el.getAttribute('data-memo-elapsed'));
+          if (ts !== undefined) {
+            const txt = formatElapsedHMS(nowMs - ts);
+            if (el.textContent !== txt) el.textContent = txt;
+          }
+        });
+        if (state.activeDetailMemoId && !$('memo-detail-modal')?.classList.contains('hidden')) {
+          const activeTs = memoMap.get(state.activeDetailMemoId);
+          if (activeTs !== undefined) setTxt('memo-detail-elapsed', formatElapsedHMS(nowMs - activeTs));
+        }
+      }
+
+      if (now.getMinutes() !== lastRenderedMinute) {
+        lastRenderedMinute = now.getMinutes();
+        renderEvents();
+      }
+
+      const timed = state.events.filter((e) => !e.isAllDay).sort((a, b) => a.startMs - b.startMs);
+      const selectedEv = state.selectedEventId ? state.events.find((e) => e.id === state.selectedEventId) : null;
+
+      if (selectedEv) {
+        if (selectedEv.isAllDay) {
+          setTxt('countdown-status-label', selectedEv.title);
+          setTxt('countdown-timer-display', dict.allDayTag);
+        } else if (selectedEv.startMs <= nowMs && selectedEv.endMs > nowMs) {
+          setTxt('countdown-status-label', `${selectedEv.title}${dict.countdownEndSuffix}`);
+          setTxt('countdown-timer-display', formatElapsedHMS(selectedEv.endMs - nowMs));
+        } else if (selectedEv.startMs > nowMs) {
+          setTxt('countdown-status-label', `${selectedEv.title}${dict.countdownUntilSuffix}`);
+          setTxt('countdown-timer-display', formatElapsedHMS(selectedEv.startMs - nowMs));
+        } else {
+          setTxt('countdown-status-label', selectedEv.title);
+          setTxt('countdown-timer-display', dict.endedTag);
+        }
+      } else {
+        const currentEv = timed.find((e) => e.startMs <= nowMs && e.endMs > nowMs);
+        const nextEv = timed.find((e) => e.startMs > nowMs);
+        if (currentEv) {
+          setTxt('countdown-status-label', `${currentEv.title}${dict.countdownEndSuffix}`);
+          setTxt('countdown-timer-display', formatElapsedHMS(currentEv.endMs - nowMs));
+        } else if (nextEv) {
+          setTxt('countdown-status-label', `${nextEv.title}${dict.countdownUntilSuffix}`);
+          setTxt('countdown-timer-display', formatElapsedHMS(nextEv.startMs - nowMs));
+        } else {
+          setTxt('countdown-status-label', dict.countdownNoneTitle);
+          setTxt('countdown-timer-display', '--:--:--');
+        }
+      }
+
+      if (state.notifyEnabled) {
+        const leadMs = state.notifyMinutes * 60000;
+        timed.forEach((ev) => {
+          const diff = ev.startMs - nowMs;
+          const notifyKey = `${ev.id}-${state.notifyMinutes}`;
+          if (diff > 0 && diff <= leadMs && !state.notifiedIds.has(notifyKey)) {
+            state.notifiedIds.add(notifyKey);
+            const hm = formatTimeHM(new Date(ev.startMs));
+            const subText = state.lang === 'ja' ? `${hm} 開始（${state.notifyMinutes}分前通知）` : `Starts at ${hm} (${state.notifyMinutes}m alert)`;
+            showNotifyPopup(ev.title, subText);
+          }
+        });
+      }
+    }
+
+    async function toggleWakeLock() {
+      if (!('wakeLock' in navigator)) return;
+      try {
+        if (!state.wakeLockActive) {
+          state.wakeLock = await navigator.wakeLock.request('screen');
+          state.wakeLockActive = true;
+          state.wakeLock.addEventListener('release', () => {
+            state.wakeLockActive = false;
+            applyLayoutUI();
+          });
+        } else if (state.wakeLock) {
+          await state.wakeLock.release();
+          state.wakeLock = null;
+          state.wakeLockActive = false;
+        }
+        applyLayoutUI();
+      } catch {}
+    }
+
+    function bindEvents() {
+      const settingsPopover = $('settings-popover');
+      const helpPopover = $('help-popover');
+      const helpCard = $('help-popover-card');
+
+      // 共通モーダル・ポップオーバー閉じる制御
+      document.addEventListener('click', (e) => {
+        const closeTarget = e.target.closest('[data-close-modal]');
+        if (closeTarget) {
+          $(closeTarget.getAttribute('data-close-modal'))?.classList.add('hidden');
+          return;
+        }
+        if (e.target.hasAttribute('data-modal-backdrop')) {
+          e.target.classList.add('hidden');
+          return;
+        }
+        if (e.target === helpPopover) {
+          helpPopover.classList.add('hidden');
+        }
+      });
+
+      $('btn-settings')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        settingsPopover?.classList.toggle('hidden');
+        helpPopover?.classList.add('hidden');
+        updateViewportScale();
+      });
+      $('settings-popover-card')?.addEventListener('click', (e) => {
+        if (!e.target.closest('[data-close-modal]')) e.stopPropagation();
+      });
+
+      $('btn-help')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        settingsPopover?.classList.add('hidden');
+        helpPopover?.classList.toggle('hidden');
+        updateViewportScale();
+      });
+      helpCard?.addEventListener('click', (e) => {
+        if (!e.target.closest('[data-close-modal]')) e.stopPropagation();
+      });
+
+      // 予定リスト：シングルタップ選択＆ダブルタップ詳細表示
+      $('events-list')?.addEventListener('click', (e) => {
+        const card = e.target.closest('[data-event-id]');
+        if (!card) return;
+        const evId = card.getAttribute('data-event-id');
+        const evObj = state.events.find((item) => item.id === evId);
+        if (!evObj) return;
+
+        const nowMs = Date.now();
+        if (e.detail >= 2 || (state.lastEventTapId === evId && nowMs - state.lastEventTapTime < 450)) {
+          state.lastEventTapTime = 0;
+          state.lastEventTapId = null;
+          openEventDetail(evObj);
+          return;
+        }
+
+        state.lastEventTapTime = nowMs;
+        state.lastEventTapId = evId;
+        const isCurrent = !evObj.isAllDay && evObj.startMs <= nowMs && evObj.endMs > nowMs;
+        const nextSelectedId = isCurrent ? null : evObj.id;
+        if (state.selectedEventId !== nextSelectedId) {
+          state.selectedEventId = nextSelectedId;
+          renderEvents();
+          updateClockAndCountdown();
+        }
+      });
+
+      // メモリスト：コメント編集同期・削除・ダブルタップ詳細表示
+      ['recent-memos-list', 'modal-memos-list'].forEach((listId) => {
+        const container = $(listId);
+        if (!container) return;
+
+        container.addEventListener('input', (e) => {
+          const inp = e.target.closest('[data-memo-comment]');
+          if (inp) syncMemoNote(inp.getAttribute('data-memo-comment'), inp.value, inp);
+        });
+
+        container.addEventListener('click', (e) => {
+          const delBtn = e.target.closest('[data-memo-del]');
+          if (delBtn) {
+            const id = delBtn.getAttribute('data-memo-del');
+            state.memos = state.memos.filter((m) => m.id !== id);
+            if (state.memos.length === 0) state.memoCounter = 0;
+            saveMemos();
+            renderMemos();
+            return;
+          }
+          if (e.target.closest('input, button')) return;
+          const row = e.target.closest('[data-memo-row]');
+          if (!row) return;
+
+          const memoId = row.getAttribute('data-memo-row');
+          const nowMs = Date.now();
+          if (e.detail >= 2 || (state.lastMemoTapId === memoId && nowMs - state.lastMemoTapTime < 450)) {
+            state.lastMemoTapTime = 0;
+            state.lastMemoTapId = null;
+            const memoObj = state.memos.find((m) => m.id === memoId);
+            if (memoObj) openMemoDetail(memoObj);
+          } else {
+            state.lastMemoTapTime = nowMs;
+            state.lastMemoTapId = memoId;
+          }
+        });
+      });
+
+      // メモ詳細モーダル内のテキスト編集同期
+      $('memo-detail-textarea')?.addEventListener('input', (e) => {
+        if (state.activeDetailMemoId) syncMemoNote(state.activeDetailMemoId, e.target.value);
+      });
+
+      // 設定ボタン群
+      $('btn-notify')?.addEventListener('click', () => {
+        if (state.notifyEnabled && !state.silentNotify) {
+          state.silentNotify = true;
+        } else if (state.notifyEnabled && state.silentNotify) {
+          state.notifyEnabled = false;
+          state.silentNotify = false;
+        } else {
+          state.notifyEnabled = true;
+          state.silentNotify = false;
+        }
+        savePref(STORAGE_KEYS.NOTIFY_ENABLED, state.notifyEnabled);
+        savePref(STORAGE_KEYS.SILENT_NOTIFY, state.silentNotify);
+        applyLayoutUI();
+      });
+
+      $('notify-minutes-slider')?.addEventListener('input', (e) => {
+        state.notifyMinutes = Math.min(60, Math.max(1, parseInt(e.target.value, 10) || 5));
+        savePref(STORAGE_KEYS.NOTIFY_MINUTES, state.notifyMinutes);
+        setTxt('notify-minutes-display', `${state.notifyMinutes}${I18N[state.lang].notifyMinutesUnit}`);
+      });
+
+      $('btn-test-notify')?.addEventListener('click', () => {
+        if (!state.notifyEnabled) return;
+        const dict = I18N[state.lang];
+        showNotifyPopup(dict.notifyTestTitle, dict.notifyTestSub);
+      });
+
+      $('btn-toggle-recent-memos')?.addEventListener('click', () => {
+        state.recentMemosVisible = !state.recentMemosVisible;
+        savePref(STORAGE_KEYS.RECENT_MEMOS_VISIBLE, state.recentMemosVisible);
+        applyLayoutUI();
+      });
+
+      $('btn-toggle-schedule')?.addEventListener('click', () => {
+        state.scheduleVisible = !state.scheduleVisible;
+        savePref(STORAGE_KEYS.SCHEDULE_VISIBLE, state.scheduleVisible);
+        applyLayoutUI();
+      });
+
+      $('btn-toggle-countdown')?.addEventListener('click', () => {
+        if (!state.scheduleVisible) return;
+        state.countdownVisible = !state.countdownVisible;
+        savePref(STORAGE_KEYS.COUNTDOWN_VISIBLE, state.countdownVisible);
+        applyLayoutUI();
+      });
+
+      $('btn-wakelock')?.addEventListener('click', toggleWakeLock);
+
+      $('btn-theme')?.addEventListener('click', () => {
+        state.theme = state.theme === 'dark' ? 'light' : 'dark';
+        savePref(STORAGE_KEYS.THEME, state.theme);
+        applyTheme();
+      });
+
+      $('btn-lang')?.addEventListener('click', () => {
+        state.lang = state.lang === 'ja' ? 'en' : 'ja';
+        savePref(STORAGE_KEYS.LANG, state.lang);
+        if (!state.gasUrl) state.events = getSampleEvents();
+        applyTranslations();
+      });
+
+      $('btn-fullscreen')?.addEventListener('click', async () => {
+        try {
+          if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+            const el = document.documentElement;
+            if (el.requestFullscreen) await el.requestFullscreen();
+            else if (el.webkitRequestFullscreen) await el.webkitRequestFullscreen();
+          } else {
+            if (document.exitFullscreen) await document.exitFullscreen();
+            else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+          }
+        } catch {}
+        applyLayoutUI();
+      });
+
+      document.addEventListener('fullscreenchange', applyLayoutUI);
+      document.addEventListener('webkitfullscreenchange', applyLayoutUI);
+      window.addEventListener('resize', updateViewportScale);
+
+      $('btn-open-memo-modal')?.addEventListener('click', () => addCurrentTimeMemo(''));
+
+      $('btn-open-memo-list')?.addEventListener('click', () => {
+        renderMemos();
+        $('memo-modal')?.classList.remove('hidden');
+      });
+
+      $('memo-form')?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const inp = $('memo-input');
+        if (!inp) return;
+        addCurrentTimeMemo(inp.value);
+        inp.value = '';
+      });
+
+      $('btn-delete-all-memos')?.addEventListener('click', () => {
+        state.memos = [];
+        state.memoCounter = 0;
+        saveMemos();
+        renderMemos();
+      });
+
+      $('btn-toggle-past-pos')?.addEventListener('click', () => {
+        state.pastPosition = state.pastPosition === 'keep' ? 'bottom' : state.pastPosition === 'bottom' ? 'hide' : 'keep';
+        savePref(STORAGE_KEYS.PAST_POS, state.pastPosition);
+        applyTranslations();
+      });
+
+      $('btn-toggle-allday-pos')?.addEventListener('click', () => {
+        state.allDayPosition = state.allDayPosition === 'top' ? 'bottom' : 'top';
+        savePref(STORAGE_KEYS.ALLDAY_POS, state.allDayPosition);
+        applyTranslations();
+      });
+
+      $('btn-reset-countdown')?.addEventListener('click', () => {
+        state.selectedEventId = null;
+        renderEvents();
+        updateClockAndCountdown();
+      });
+
+      // GAS連携モーダル
+      const switchGasTab = (tab) => {
+        const activeCls = 'flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-colors bg-[#FFFDF9] dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 shadow-xs';
+        const inactiveCls = 'flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-colors text-stone-600 dark:text-slate-300 hover:text-stone-900 dark:hover:text-white';
+        const isGuide = tab === 'guide';
+        const gBtn = $('btn-gas-tab-guide');
+        const uBtn = $('btn-gas-tab-url');
+        if (gBtn) gBtn.className = isGuide ? activeCls : inactiveCls;
+        if (uBtn) uBtn.className = isGuide ? inactiveCls : activeCls;
+        $('gas-tab-panel-guide')?.classList.toggle('hidden', !isGuide);
+        $('gas-tab-panel-url')?.classList.toggle('hidden', isGuide);
+      };
+
+      $('btn-gas-tab-guide')?.addEventListener('click', () => switchGasTab('guide'));
+      $('btn-gas-tab-url')?.addEventListener('click', () => switchGasTab('url'));
+      $('btn-go-gas-url-tab')?.addEventListener('click', () => switchGasTab('url'));
+
+      $('btn-copy-gas-code')?.addEventListener('click', () => {
+        const codeEl = $('gas-sample-code');
+        if (!codeEl) return;
+        const ta = document.createElement('textarea');
+        ta.value = codeEl.textContent || '';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        showToast(I18N[state.lang].gasCopiedToast);
+      });
+
+      $('btn-connect-gas')?.addEventListener('click', () => {
+        const inp = $('gas-url-input');
+        if (inp) inp.value = state.gasUrl;
+        switchGasTab('guide');
+        $('gas-modal')?.classList.remove('hidden');
+      });
+
+      $('btn-save-gas')?.addEventListener('click', () => {
+        const inp = $('gas-url-input');
+        state.gasUrl = inp ? inp.value.trim() : '';
+        savePref(STORAGE_KEYS.GAS_URL, state.gasUrl);
+        $('gas-modal')?.classList.add('hidden');
+        fetchCalendarEvents();
+      });
+
+      $('btn-disconnect-gas')?.addEventListener('click', () => {
+        state.gasUrl = '';
+        const inp = $('gas-url-input');
+        if (inp) inp.value = '';
+        try { localStorage.removeItem(STORAGE_KEYS.GAS_URL); } catch {}
+        $('gas-modal')?.classList.add('hidden');
+        fetchCalendarEvents();
+      });
+    }
+
+    function initApp() {
+      bindEvents();
+      applyTranslations();
+      fetchCalendarEvents();
+      setInterval(updateClockAndCountdown, 250);
+      setInterval(() => { if (state.gasUrl) fetchCalendarEvents(); }, 300000);
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initApp);
+    } else {
+      initApp();
+    }
+  </script>
+</body>
+</html>
